@@ -1,0 +1,85 @@
+import time
+from marionette import Marionette
+from marionette import Wait
+ 
+class TestContacts:
+
+    def __init__(self):
+       self.test_add_contacts()
+
+    def unlock_screen(self):
+        self.marionette.execute_script('window.wrappedJSObject.lockScreen.unlock();')  
+ 
+    def test_add_contacts(self):
+       # Create the client for this session. Assuming you're using the default port on a Marionette instance running locally
+       self.marionette = Marionette()
+       self.marionette.start_session()
+
+       # Unlock the screen
+       self.unlock_screen()
+
+       # kill all open apps
+       self.kill_all()
+
+    def kill_all(self):
+                self.marionette.switch_to_frame()
+                self.marionette.execute_async_script("""
+                  // Kills all running apps, except the homescreen.
+                  function killAll() {
+                  let originsToClose = [];
+                  let that = this;
+
+                  let runningApps = window.wrappedJSObject.AppWindowManager.getRunningApps();
+                  for (let origin in runningApps) {
+                  if (origin.indexOf('homescreen') == -1) {
+                  window.wrappedJSObject.AppWindowManager.kill(origin);
+                  }
+                  }
+
+                  if (!originsToClose.length) {
+                  marionetteScriptFinished(true);
+                  return;
+                  }
+
+                  originsToClose.slice(0).forEach(function(origin) {
+                  kill(origin, function() {});
+                  });  
+                  };
+                  killAll();
+            """)
+       # Switch context to the homescreen iframe and tap on the contacts icon
+       time.sleep(2)
+       home_frame = self.marionette.find_element('css selector', 'div.homescreen iframe')
+       self.marionette.switch_to_frame(home_frame)
+       contacts_icon = self.marionette.find_element('css selector', "#footer li[aria-label='Contacts']")
+       contacts_icon.tap()
+
+       # Switch context back to the base frame
+       self.marionette.switch_to_frame()
+       Wait(self.marionette).until(lambda m: m.find_element('css selector', "iframe[data-url*='contacts']").is_displayed())
+
+       # Switch context to the contacts app
+       contacts_frame = self.marionette.find_element('css selector', "iframe[data-url*='contacts']")
+       self.marionette.switch_to_frame(contacts_frame)
+ 
+       # Tap [+] to add a new Contact
+       self.marionette.find_element('id', 'add-contact-button').tap()
+       Wait(self.marionette).until(lambda m: m.find_element('id', 'save-button').location['y']== 0)
+ 
+        # Type name into the fields
+       self.marionette.find_element('id', 'givenName').send_keys('John')
+       self.marionette.find_element('id', 'familyName').send_keys('Doe')
+ 
+       # Tap done
+       self.marionette.find_element('id', 'save-button').tap()
+       Wait(self.marionette).until(lambda m: not m.find_element('id', 'save-button').is_displayed())
+
+       # Now let's find the contact item and get its text
+       contact_name = self.marionette.find_element('css selector', 'li.contact-item p').text     
+       assert contact_name == 'John Doe'
+ 
+       # Close the Marionette session now that the test is finished
+       self.marionette.delete_session()
+ 
+if __name__ == '__main__':
+       TestContacts()
